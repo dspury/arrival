@@ -82,6 +82,58 @@ class NodeTreeBuilder:
             bl_node.location = (self._current_x, self._current_y)
             self._current_x += 300
         return bl_node
+
+    def _link(self, source: sockets.Socket, target: bpy.types.NodeSocket) -> None:
+        """Link an Arrival socket to a Blender input socket."""
+        self._tree.links.new(source.output_socket, target)
+
+    def _set_or_link(self, target: bpy.types.NodeSocket, value) -> None:
+        """Assign a literal default value or link an Arrival socket."""
+        if isinstance(value, sockets.Socket):
+            self._link(value, target)
+        else:
+            try:
+                target.default_value = value
+            except TypeError:
+                if target.bl_socket_idname == "NodeSocketRotation":
+                    from mathutils import Euler
+                    target.default_value = Euler(value, 'XYZ')
+                else:
+                    raise
+
+    def _socket(self, cls, bl_node: bpy.types.Node, output_name: str):
+        """Wrap a Blender node output in an Arrival socket class."""
+        return cls(self, bl_node.outputs[output_name], bl_node)
+
+    def _input(self, bl_node: bpy.types.Node, *names: str):
+        """Return the first available input by name."""
+        for name in names:
+            if name in bl_node.inputs:
+                return bl_node.inputs[name]
+        raise KeyError(f"None of the inputs exist on {bl_node.bl_idname}: {names}")
+
+    def _output(self, bl_node: bpy.types.Node, *names: str):
+        """Return the first available output by name."""
+        for name in names:
+            if name in bl_node.outputs:
+                return bl_node.outputs[name]
+        raise KeyError(f"None of the outputs exist on {bl_node.bl_idname}: {names}")
+
+    def _set_enum(self, bl_node: bpy.types.Node, attr: str, value: str, allowed: set[str]) -> None:
+        """Validate and set an enum-like node attribute when available."""
+        if value not in allowed:
+            raise ValueError(f"{attr} must be one of {sorted(allowed)}, got {value!r}")
+        if hasattr(bl_node, attr):
+            try:
+                setattr(bl_node, attr, value)
+            except TypeError as exc:
+                raise ValueError(f"{value!r} is not valid for {bl_node.bl_idname}.{attr}") from exc
+
+    def _with_location(self, mesh: sockets.Mesh, location: Tuple[float, float, float]) -> sockets.Mesh:
+        """Apply primitive location using a Transform node when non-zero."""
+        if tuple(location) == (0, 0, 0):
+            return mesh
+        return mesh.transform(translation=location)
     
     def _next_y(self):
         """Move to next row for layout."""
@@ -97,14 +149,14 @@ class NodeTreeBuilder:
         """Create a cube mesh primitive."""
         bl_node = self._create_node("GeometryNodeMeshCube")
         bl_node.inputs["Size"].default_value = (size, size, size)
-        return sockets.Mesh(self, bl_node.outputs["Mesh"], bl_node)
+        return self._with_location(self._socket(sockets.Mesh, bl_node, "Mesh"), location)
     
     def mesh_sphere(self, radius: float = 1.0,
                     location: Tuple[float, float, float] = (0, 0, 0)) -> sockets.Mesh:
         """Create a UV sphere mesh primitive."""
         bl_node = self._create_node("GeometryNodeMeshUVSphere")
         bl_node.inputs["Radius"].default_value = radius
-        return sockets.Mesh(self, bl_node.outputs["Mesh"], bl_node)
+        return self._with_location(self._socket(sockets.Mesh, bl_node, "Mesh"), location)
     
     def mesh_ico_sphere(self, radius: float = 1.0, subdivisions: int = 2,
                          location: Tuple[float, float, float] = (0, 0, 0)) -> sockets.Mesh:
@@ -112,7 +164,7 @@ class NodeTreeBuilder:
         bl_node = self._create_node("GeometryNodeMeshIcoSphere")
         bl_node.inputs["Radius"].default_value = radius
         bl_node.inputs["Subdivisions"].default_value = subdivisions
-        return sockets.Mesh(self, bl_node.outputs["Mesh"], bl_node)
+        return self._with_location(self._socket(sockets.Mesh, bl_node, "Mesh"), location)
     
     def mesh_cylinder(self, radius: float = 1.0, depth: float = 2.0,
                        location: Tuple[float, float, float] = (0, 0, 0)) -> sockets.Mesh:
@@ -120,7 +172,7 @@ class NodeTreeBuilder:
         bl_node = self._create_node("GeometryNodeMeshCylinder")
         bl_node.inputs["Radius"].default_value = radius
         bl_node.inputs["Depth"].default_value = depth
-        return sockets.Mesh(self, bl_node.outputs["Mesh"], bl_node)
+        return self._with_location(self._socket(sockets.Mesh, bl_node, "Mesh"), location)
     
     def mesh_cone(self, radius1: float = 1.0, radius2: float = 0.0, depth: float = 2.0,
                    location: Tuple[float, float, float] = (0, 0, 0)) -> sockets.Mesh:
@@ -129,7 +181,7 @@ class NodeTreeBuilder:
         bl_node.inputs["Radius Top"].default_value = radius2
         bl_node.inputs["Radius Bottom"].default_value = radius1
         bl_node.inputs["Depth"].default_value = depth
-        return sockets.Mesh(self, bl_node.outputs["Mesh"], bl_node)
+        return self._with_location(self._socket(sockets.Mesh, bl_node, "Mesh"), location)
     
     def mesh_grid(self, size_x: float = 2.0, size_y: float = 2.0,
                    vertices_x: int = 10, vertices_y: int = 10,
@@ -140,7 +192,7 @@ class NodeTreeBuilder:
         bl_node.inputs["Size Y"].default_value = size_y
         bl_node.inputs["Vertices X"].default_value = vertices_x
         bl_node.inputs["Vertices Y"].default_value = vertices_y
-        return sockets.Mesh(self, bl_node.outputs["Mesh"], bl_node)
+        return self._with_location(self._socket(sockets.Mesh, bl_node, "Mesh"), location)
     
     def mesh_line(self, count: int = 10,
                    offset: Tuple[float, float, float] = (1, 0, 0),
@@ -149,7 +201,7 @@ class NodeTreeBuilder:
         bl_node = self._create_node("GeometryNodeMeshLine")
         bl_node.inputs["Count"].default_value = count
         bl_node.inputs["Offset"].default_value = offset
-        return sockets.Mesh(self, bl_node.outputs["Mesh"], bl_node)
+        return self._with_location(self._socket(sockets.Mesh, bl_node, "Mesh"), location)
     
     def mesh_circle(self, vertices: int = 32, radius: float = 1.0,
                      location: Tuple[float, float, float] = (0, 0, 0)) -> sockets.Mesh:
@@ -157,7 +209,7 @@ class NodeTreeBuilder:
         bl_node = self._create_node("GeometryNodeMeshCircle")
         bl_node.inputs["Vertices"].default_value = vertices
         bl_node.inputs["Radius"].default_value = radius
-        return sockets.Mesh(self, bl_node.outputs["Mesh"], bl_node)
+        return self._with_location(self._socket(sockets.Mesh, bl_node, "Mesh"), location)
     
     # ─────────────────────────────────────────────────────────────────
     # Curve Primitives
@@ -224,18 +276,264 @@ class NodeTreeBuilder:
     def join_geometry(self, *geometries: sockets.Geometry) -> sockets.Geometry:
         """Join multiple geometry streams into one."""
         bl_node = self._create_node("GeometryNodeJoinGeometry")
-        for i, geo in enumerate(geometries):
-            if i == 0:
-                bl_node.inputs["Geometry"].default_value = geo.output_socket.default_value
-            self._tree.links.new(geo.output_socket, bl_node.inputs["Geometry"])
-        return sockets.Geometry(self, bl_node.outputs["Geometry"], bl_node)
+        for geo in geometries:
+            self._link(geo, bl_node.inputs["Geometry"])
+        return self._socket(sockets.Geometry, bl_node, "Geometry")
     
     def set_material(self, geometry: sockets.Geometry, material) -> sockets.Geometry:
         """Set material on geometry."""
         bl_node = self._create_node("GeometryNodeSetMaterial")
         bl_node.inputs["Material"].default_value = material
-        self._tree.links.new(geometry.output_socket, bl_node.inputs["Geometry"])
-        return sockets.Geometry(self, bl_node.outputs["Geometry"], bl_node)
+        self._link(geometry, bl_node.inputs["Geometry"])
+        return self._socket(sockets.Geometry, bl_node, "Geometry")
+
+    def distribute_points_on_faces(
+        self,
+        geometry: sockets.Geometry,
+        density: float | sockets.Float = 1.0,
+        seed: int = 0,
+        selection: bool | sockets.Boolean = True,
+    ) -> sockets.Geometry:
+        """Distribute points across mesh faces."""
+        bl_node = self._create_node("GeometryNodeDistributePointsOnFaces")
+        self._link(geometry, self._input(bl_node, "Mesh", "Geometry"))
+        self._set_or_link(self._input(bl_node, "Density"), density)
+        if "Selection" in bl_node.inputs:
+            self._set_or_link(bl_node.inputs["Selection"], selection)
+        if "Seed" in bl_node.inputs:
+            bl_node.inputs["Seed"].default_value = seed
+        return sockets.Geometry(self, self._output(bl_node, "Points"), bl_node)
+
+    def points_on_faces(self, geometry, density=1.0, seed=0, selection=True) -> sockets.Geometry:
+        """Alias for distribute_points_on_faces."""
+        return self.distribute_points_on_faces(geometry, density=density, seed=seed, selection=selection)
+
+    def instance_on_points(
+        self,
+        points: sockets.Geometry,
+        instance: sockets.Geometry,
+        rotation: tuple[float, float, float] | sockets.Vector | None = None,
+        scale: float | tuple[float, float, float] | sockets.Vector = 1.0,
+        pick_instance: bool | sockets.Boolean = False,
+        instance_index: int | sockets.Integer = 0,
+    ) -> sockets.Geometry:
+        """Instance geometry on point geometry."""
+        bl_node = self._create_node("GeometryNodeInstanceOnPoints")
+        self._link(points, self._input(bl_node, "Points"))
+        self._link(instance, self._input(bl_node, "Instance"))
+        if isinstance(scale, (int, float)):
+            scale = (scale, scale, scale)
+        self._set_or_link(self._input(bl_node, "Scale"), scale)
+        if rotation is not None and "Rotation" in bl_node.inputs:
+            self._set_or_link(bl_node.inputs["Rotation"], rotation)
+        if "Pick Instance" in bl_node.inputs:
+            self._set_or_link(bl_node.inputs["Pick Instance"], pick_instance)
+        if "Instance Index" in bl_node.inputs:
+            self._set_or_link(bl_node.inputs["Instance Index"], instance_index)
+        return sockets.Geometry(self, self._output(bl_node, "Instances"), bl_node)
+
+    def realize_instances(self, geometry: sockets.Geometry) -> sockets.Geometry:
+        """Realize instances into concrete geometry."""
+        bl_node = self._create_node("GeometryNodeRealizeInstances")
+        self._link(geometry, self._input(bl_node, "Geometry"))
+        return self._socket(sockets.Geometry, bl_node, "Geometry")
+
+    def position(self) -> sockets.Vector:
+        """Current point position field."""
+        bl_node = self._create_node("GeometryNodeInputPosition")
+        return self._socket(sockets.Vector, bl_node, "Position")
+
+    def normal(self) -> sockets.Vector:
+        """Current surface normal field."""
+        bl_node = self._create_node("GeometryNodeInputNormal")
+        return self._socket(sockets.Vector, bl_node, "Normal")
+
+    def index(self) -> sockets.Integer:
+        """Current element index field."""
+        bl_node = self._create_node("GeometryNodeInputIndex")
+        return self._socket(sockets.Integer, bl_node, "Index")
+
+    def vector_add(self, a: sockets.Vector | tuple, b: sockets.Vector | tuple) -> sockets.Vector:
+        """Add two vectors."""
+        bl_node = self._create_node("ShaderNodeVectorMath")
+        bl_node.operation = 'ADD'
+        self._set_or_link(bl_node.inputs[0], a)
+        self._set_or_link(bl_node.inputs[1], b)
+        return self._socket(sockets.Vector, bl_node, "Vector")
+
+    def vector_subtract(self, a: sockets.Vector | tuple, b: sockets.Vector | tuple) -> sockets.Vector:
+        """Subtract vector b from vector a."""
+        bl_node = self._create_node("ShaderNodeVectorMath")
+        bl_node.operation = 'SUBTRACT'
+        self._set_or_link(bl_node.inputs[0], a)
+        self._set_or_link(bl_node.inputs[1], b)
+        return self._socket(sockets.Vector, bl_node, "Vector")
+
+    def vector_scale(self, vector: sockets.Vector | tuple, scale: sockets.Float | float) -> sockets.Vector:
+        """Scale a vector by a scalar."""
+        bl_node = self._create_node("ShaderNodeVectorMath")
+        bl_node.operation = 'SCALE'
+        self._set_or_link(bl_node.inputs[0], vector)
+        target = bl_node.inputs["Scale"] if "Scale" in bl_node.inputs else bl_node.inputs[3]
+        self._set_or_link(target, scale)
+        return self._socket(sockets.Vector, bl_node, "Vector")
+
+    def float_add(self, a: sockets.Float | float, b: sockets.Float | float) -> sockets.Float:
+        """Add two float values."""
+        bl_node = self._create_node("ShaderNodeMath")
+        bl_node.operation = 'ADD'
+        self._set_or_link(bl_node.inputs[0], a)
+        self._set_or_link(bl_node.inputs[1], b)
+        return self._socket(sockets.Float, bl_node, "Value")
+
+    def float_multiply(self, a: sockets.Float | float, b: sockets.Float | float) -> sockets.Float:
+        """Multiply two float values."""
+        bl_node = self._create_node("ShaderNodeMath")
+        bl_node.operation = 'MULTIPLY'
+        self._set_or_link(bl_node.inputs[0], a)
+        self._set_or_link(bl_node.inputs[1], b)
+        return self._socket(sockets.Float, bl_node, "Value")
+
+    def map_range(
+        self,
+        value: sockets.Float | float,
+        from_min: float = 0.0,
+        from_max: float = 1.0,
+        to_min: float = 0.0,
+        to_max: float = 1.0,
+        clamp: bool = True,
+    ) -> sockets.Float:
+        """Remap a float value from one range to another."""
+        bl_node = self._create_node("ShaderNodeMapRange")
+        if hasattr(bl_node, "clamp"):
+            bl_node.clamp = clamp
+        self._set_or_link(self._input(bl_node, "Value"), value)
+        self._set_or_link(self._input(bl_node, "From Min"), from_min)
+        self._set_or_link(self._input(bl_node, "From Max"), from_max)
+        self._set_or_link(self._input(bl_node, "To Min"), to_min)
+        self._set_or_link(self._input(bl_node, "To Max"), to_max)
+        return self._socket(sockets.Float, bl_node, "Result")
+
+    def random_vector(
+        self,
+        min_val: tuple[float, float, float] = (0.0, 0.0, 0.0),
+        max_val: tuple[float, float, float] = (1.0, 1.0, 1.0),
+        seed: int = 0,
+    ) -> sockets.Vector:
+        """Create a random vector field."""
+        bl_node = self._create_node("FunctionNodeRandomValue")
+        if hasattr(bl_node, "data_type"):
+            try:
+                bl_node.data_type = 'FLOAT_VECTOR'
+            except TypeError:
+                pass
+        self._set_or_link(self._input(bl_node, "Min"), min_val)
+        self._set_or_link(self._input(bl_node, "Max"), max_val)
+        if "Seed" in bl_node.inputs:
+            bl_node.inputs["Seed"].default_value = seed
+        return sockets.Vector(self, self._output(bl_node, "Vector", "Value"), bl_node)
+
+    def set_position(
+        self,
+        geometry: sockets.Geometry,
+        position: sockets.Vector | tuple | None = None,
+        offset: sockets.Vector | tuple | None = None,
+        selection: sockets.Boolean | bool = True,
+    ) -> sockets.Geometry:
+        """Set geometry positions by absolute position and/or offset field."""
+        bl_node = self._create_node("GeometryNodeSetPosition")
+        self._link(geometry, self._input(bl_node, "Geometry"))
+        self._set_or_link(self._input(bl_node, "Selection"), selection)
+        if position is not None:
+            self._set_or_link(self._input(bl_node, "Position"), position)
+        if offset is not None:
+            self._set_or_link(self._input(bl_node, "Offset"), offset)
+        return self._socket(sockets.Geometry, bl_node, "Geometry")
+
+    def displace_noise(
+        self,
+        geometry: sockets.Geometry,
+        strength: float | sockets.Float = 0.1,
+        noise_scale: float = 1.0,
+        detail: float = 8.0,
+        along_normal: bool = True,
+    ) -> sockets.Geometry:
+        """Displace geometry with a noise field."""
+        noise = self.noise(scale=noise_scale, detail=detail)
+        min_strength = self.float_multiply(strength, -1.0) if isinstance(strength, sockets.Socket) else -strength
+        remapped = self.map_range(noise, from_min=0.0, from_max=1.0, to_min=min_strength, to_max=strength)
+        if along_normal:
+            offset = self.vector_scale(self.normal(), remapped)
+        else:
+            offset = self.vector_scale((0.0, 0.0, 1.0), remapped)
+        return self.set_position(geometry, offset=offset)
+
+    def delete_geometry(
+        self,
+        geometry: sockets.Geometry,
+        selection: sockets.Boolean | bool = True,
+        domain: str = "FACE",
+        mode: str = "ALL",
+    ) -> sockets.Geometry:
+        """Delete selected geometry elements."""
+        bl_node = self._create_node("GeometryNodeDeleteGeometry")
+        self._link(geometry, self._input(bl_node, "Geometry"))
+        self._set_or_link(self._input(bl_node, "Selection"), selection)
+        self._set_enum(bl_node, "domain", domain, {"POINT", "EDGE", "FACE", "CURVE", "INSTANCE"})
+        self._set_enum(bl_node, "mode", mode, {"ALL", "EDGE_FACE", "ONLY_FACE"})
+        return self._socket(sockets.Geometry, bl_node, "Geometry")
+
+    def mesh_to_points(
+        self,
+        mesh: sockets.Geometry,
+        mode: str = "VERTICES",
+        radius: float | sockets.Float = 0.05,
+    ) -> sockets.Geometry:
+        """Convert mesh elements to point geometry."""
+        bl_node = self._create_node("GeometryNodeMeshToPoints")
+        self._set_enum(bl_node, "mode", mode, {"VERTICES", "EDGES", "FACES", "CORNERS"})
+        self._link(mesh, self._input(bl_node, "Mesh"))
+        self._set_or_link(self._input(bl_node, "Radius"), radius)
+        return sockets.Geometry(self, self._output(bl_node, "Points"), bl_node)
+
+    def store_named_attribute(
+        self,
+        geometry: sockets.Geometry,
+        name: str,
+        value: sockets.Float | sockets.Vector | sockets.Color | bool | float | tuple,
+        data_type: str,
+        domain: str = "POINT",
+        selection: sockets.Boolean | bool = True,
+    ) -> sockets.Geometry:
+        """Store a field as a named attribute."""
+        bl_node = self._create_node("GeometryNodeStoreNamedAttribute")
+        self._link(geometry, self._input(bl_node, "Geometry"))
+        self._set_or_link(self._input(bl_node, "Selection"), selection)
+        self._set_or_link(self._input(bl_node, "Name"), name)
+        self._set_enum(bl_node, "data_type", data_type, {"FLOAT", "INT", "FLOAT_VECTOR", "FLOAT_COLOR", "BOOLEAN", "QUATERNION", "FLOAT4X4"})
+        self._set_enum(bl_node, "domain", domain, {"POINT", "EDGE", "FACE", "CORNER", "CURVE", "INSTANCE"})
+        value_input = self._input(bl_node, "Value")
+        self._set_or_link(value_input, value)
+        return self._socket(sockets.Geometry, bl_node, "Geometry")
+
+    def uv_map(self, name: str = "UVMap") -> sockets.Vector:
+        """Read a named UV map as a vector field."""
+        try:
+            bl_node = self._create_node("GeometryNodeInputUVMap")
+            if "UV Map" in bl_node.inputs:
+                self._set_or_link(bl_node.inputs["UV Map"], name)
+            elif "Name" in bl_node.inputs:
+                self._set_or_link(bl_node.inputs["Name"], name)
+            return sockets.Vector(self, self._output(bl_node, "UV", "Vector", "Attribute"), bl_node)
+        except (RuntimeError, TypeError, ValueError):
+            bl_node = self._create_node("GeometryNodeInputNamedAttribute")
+            if hasattr(bl_node, "data_type"):
+                try:
+                    bl_node.data_type = 'FLOAT_VECTOR'
+                except TypeError:
+                    pass
+            self._set_or_link(self._input(bl_node, "Name"), name)
+            return sockets.Vector(self, self._output(bl_node, "Attribute", "Vector"), bl_node)
     
     # ─────────────────────────────────────────────────────────────────
     # Group I/O

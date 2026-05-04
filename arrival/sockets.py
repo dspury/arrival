@@ -63,21 +63,20 @@ class Geometry(Socket):
                   scale: Tuple[float, float, float] = (1, 1, 1)) -> 'Geometry':
         """Apply transform to geometry. Returns new Geometry socket."""
         node = self._node
-        bl_node = node._tree.nodes.new("GeometryNodeTransform")
-        bl_node.location = (node._current_x, node._current_y)
-        node._current_x += 300
+        bl_node = node._create_node("GeometryNodeTransform")
         
         # Set transform inputs (Translation/Rotation/Scale are VECTOR = 3 floats)
-        bl_node.inputs["Translation"].default_value = translation
-        bl_node.inputs["Scale"].default_value = scale
-        # Rotation is ROTATION type, leave at default for now
+        node._set_or_link(bl_node.inputs["Translation"], translation)
+        if "Rotation" in bl_node.inputs:
+            node._set_or_link(bl_node.inputs["Rotation"], rotation)
+        node._set_or_link(bl_node.inputs["Scale"], scale)
         
         # Link input geometry
-        node._tree.links.new(self.output_socket, bl_node.inputs["Geometry"])
+        node._link(self, bl_node.inputs["Geometry"])
         
         # Return new socket on output
         new_socket = bl_node.outputs["Geometry"]
-        return Geometry(node, new_socket, bl_node)
+        return self.__class__(node, new_socket, bl_node)
     
     def scale(self, factor: float = 1.0) -> 'Geometry':
         """Uniform scale. Pass a single float or (x, y, z) tuple for non-uniform."""
@@ -88,35 +87,55 @@ class Geometry(Socket):
     def join(self, *others: 'Geometry') -> 'Geometry':
         """Join this geometry with other geometry inputs."""
         node = self._node
-        bl_node = node._tree.nodes.new("GeometryNodeJoinGeometry")
-        bl_node.location = (node._current_x, node._current_y)
-        node._current_x += 300
-        
-        # Link this geometry
-        bl_node.inputs["Geometry"].default_value = self.output_socket.default_value
-        node._tree.links.new(self.output_socket, bl_node.inputs["Geometry"])
-        
-        # Link others
-        for i, other in enumerate(others):
-            if i == 0:
-                bl_node.inputs["Geometry"].link_default_value = other.output_socket.default_value
-            node._tree.links.new(other.output_socket, bl_node.inputs["Geometry"])
-        
-        new_socket = bl_node.outputs["Geometry"]
-        return Geometry(node, new_socket, bl_node)
+        return node.join_geometry(self, *others)
     
     def set_material(self, material) -> 'Geometry':
         """Set material on geometry."""
         node = self._node
-        bl_node = node._tree.nodes.new("GeometryNodeSetMaterial")
-        bl_node.location = (node._current_x, node._current_y)
-        node._current_x += 300
-        
-        bl_node.inputs["Material"].default_value = material
-        node._tree.links.new(self.output_socket, bl_node.inputs["Geometry"])
-        
-        new_socket = bl_node.outputs["Geometry"]
-        return Geometry(node, new_socket, bl_node)
+        return node.set_material(self, material)
+
+    def points_on_faces(self, density=1.0, seed=0, selection=True) -> 'Geometry':
+        """Distribute points on this geometry's faces."""
+        return self._node.points_on_faces(self, density=density, seed=seed, selection=selection)
+
+    def instance_on_points(self, instance, rotation=None, scale=1.0,
+                           pick_instance=False, instance_index=0) -> 'Geometry':
+        """Instance geometry on this point geometry."""
+        return self._node.instance_on_points(
+            self,
+            instance,
+            rotation=rotation,
+            scale=scale,
+            pick_instance=pick_instance,
+            instance_index=instance_index,
+        )
+
+    def realize_instances(self) -> 'Geometry':
+        """Realize this instance geometry."""
+        return self._node.realize_instances(self)
+
+    def set_position(self, position=None, offset=None, selection=True) -> 'Geometry':
+        """Set positions on this geometry."""
+        return self._node.set_position(self, position=position, offset=offset, selection=selection)
+
+    def displace_noise(self, strength=0.1, noise_scale=1.0, detail=8.0,
+                       along_normal=True) -> 'Geometry':
+        """Displace this geometry with a noise field."""
+        return self._node.displace_noise(
+            self,
+            strength=strength,
+            noise_scale=noise_scale,
+            detail=detail,
+            along_normal=along_normal,
+        )
+
+    def delete(self, selection=True, domain="FACE", mode="ALL") -> 'Geometry':
+        """Delete selected geometry elements."""
+        return self._node.delete_geometry(self, selection=selection, domain=domain, mode=mode)
+
+    def to_points(self, mode="VERTICES", radius=0.05) -> 'Geometry':
+        """Convert this mesh geometry to points."""
+        return self._node.mesh_to_points(self, mode=mode, radius=radius)
 
 
 class Mesh(Geometry):
@@ -169,37 +188,17 @@ class Mesh(Geometry):
     def subdivide(self, levels: int = 1) -> 'Mesh':
         """Subdivide mesh."""
         node = self._node
-        bl_node = node._tree.nodes.new("GeometryNodeSubdivideMesh")
-        bl_node.location = (node._current_x, node._current_y)
-        node._current_x += 300
+        bl_node = node._create_node("GeometryNodeSubdivideMesh")
         
-        bl_node.inputs["Level"].default_value = levels
-        node._tree.links.new(self.output_socket, bl_node.inputs["Mesh"])
+        node._set_or_link(bl_node.inputs["Level"], levels)
+        node._link(self, bl_node.inputs["Mesh"])
         
         new_socket = bl_node.outputs["Mesh"]
         return Mesh(node, new_socket, bl_node)
     
     def displace(self, strength: float = 0.1, noise_scale: float = 1.0) -> 'Mesh':
         """Displace mesh using noise. Requires subdivision for smooth results."""
-        node = self._node
-        
-        # Add subdivision first for smooth displacement
-        subdivided = self.subdivide(levels=3)
-        
-        # Add displacement modifier with noise
-        bl_node = node._tree.nodes.new("GeometryNodeAttributeVectorMath")
-        bl_node.location = (node._current_x, node._current_y)
-        node._current_x += 300
-        
-        # Set operation to add
-        bl_node.operation = 'ADD'
-        
-        # This is simplified — for full displacement we'd use displacement modifier
-        # For now, just pass through
-        node._tree.links.new(subdivided.output_socket, bl_node.inputs["Vector"])
-        
-        new_socket = bl_node.outputs["Vector"]
-        return Mesh(node, new_socket, bl_node)
+        return self.displace_noise(strength=strength, noise_scale=noise_scale)
 
 
 class Float(Socket):
