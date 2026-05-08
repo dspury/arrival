@@ -41,7 +41,7 @@ jobs:
 
       - name: Set up Python
         run: |
-          ${BLENDER_DIR}/blender --background --python-expr "import sys; print(sys.executable)" | tee /tmp/blender_python.txt
+          ${BLENDER_DIR}/blender --background --python-expr "import sys; print(sys.executable)" 2>/dev/null | grep python | tee /tmp/blender_python.txt
           BLENDER_PY=$(cat /tmp/blender_python.txt)
           echo "BLENDER_PYTHON=$BLENDER_PY" >> $GITHUB_ENV
 
