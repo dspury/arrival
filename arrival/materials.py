@@ -147,11 +147,13 @@ def dark_mirror(roughness: float = 0.05,
     Returns:
         Blender material
     """
+    # Base color lifted from 0.01 → 0.04 so the surface still reads as "dark mirror"
+    # but isn't a near-perfect light sink under typical lighting rigs.
     return principled(
-        base_color=(0.01, 0.01, 0.02, 1.0),
+        base_color=(0.04, 0.04, 0.06, 1.0),
         metallic=1.0,
         roughness=roughness,
-        specular=2.0,
+        specular=1.5,
         name=name
     )
 
@@ -170,15 +172,19 @@ def obsidian(name: str = "Obsidian") -> bpy.types.Material:
     mat = bpy.data.materials.new(name=name)
     tree, bsdf, output = _ensure_nodes(mat)
     
-    bsdf.inputs["Base Color"].default_value = (0.025, 0.025, 0.035, 1.0)
+    # Obsidian is a deep, glassy black — but Principled BSDF with base_color near 0
+    # absorbs almost all light and renders pitch-black under typical lighting. Lift the
+    # base slightly and drop transmission so reflections (the actual visual signature
+    # of obsidian) carry the look.
+    bsdf.inputs["Base Color"].default_value = (0.05, 0.05, 0.07, 1.0)
     bsdf.inputs["Metallic"].default_value = 0.0
-    bsdf.inputs["Roughness"].default_value = 0.0
+    bsdf.inputs["Roughness"].default_value = 0.05
     bsdf.inputs["IOR"].default_value = 2.1
-    bsdf.inputs["Specular IOR Level"].default_value = 1.0
-    bsdf.inputs["Coat Weight"].default_value = 0.8
-    bsdf.inputs["Coat IOR"].default_value = 2.1
+    bsdf.inputs["Specular IOR Level"].default_value = 1.2
+    bsdf.inputs["Coat Weight"].default_value = 1.0
+    bsdf.inputs["Coat IOR"].default_value = 1.6
     bsdf.inputs["Coat Roughness"].default_value = 0.0
-    bsdf.inputs["Transmission Weight"].default_value = 0.1
+    bsdf.inputs["Transmission Weight"].default_value = 0.0
     
     tree.links.new(bsdf.outputs["BSDF"], output.inputs["Surface"])
     

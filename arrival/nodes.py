@@ -66,6 +66,37 @@ class NodeTreeBuilder:
             pass
         return False
     
+    def _auto_output(self):
+        """Automatically wire the last geometry output if not already set.
+        
+        Called on context exit if user hasn't manually called set_output().
+        Finds the last geometry socket created and wires it to group output.
+        """
+        if self._tree is None:
+            return
+        # Check if output is already wired
+        for link in self._tree.links:
+            if link.to_socket == self._group_output.inputs["Geometry"]:
+                return  # Already wired
+        # Find last geometry socket by scanning for the last created node
+        # that has a Geometry output and isn't already linked elsewhere
+        last_geo = None
+        for node in self._tree.nodes:
+            if node.type in ('GROUP_INPUT', 'GROUP_OUTPUT'):
+                continue
+            for output in node.outputs:
+                if output.type == 'GEOMETRY':
+                    # Check if this output is available (not fully linked out)
+                    can_use = True
+                    for link in self._tree.links:
+                        if link.from_socket == output:
+                            can_use = False
+                            break
+                    if can_use:
+                        last_geo = output
+        if last_geo is not None:
+            self._tree.links.new(last_geo, self._group_output.inputs["Geometry"])
+    
     @property
     def tree(self) -> bpy.types.GeometryNodeTree:
         """The underlying Blender node tree."""
@@ -91,11 +122,16 @@ class NodeTreeBuilder:
         """Assign a literal default value or link an Arrival socket."""
         if isinstance(value, sockets.Socket):
             self._link(value, target)
+        elif isinstance(value, bpy.types.NodeSocket):
+            # Raw Blender socket passed directly — link it to the target
+            self._tree.links.new(value, target)
         else:
             try:
                 target.default_value = value
             except TypeError:
-                if target.bl_socket_idname == "NodeSocketRotation":
+                # Handle rotation sockets which need Euler format
+                sidename = getattr(target, 'bl_socket_idname', None)
+                if sidename == "NodeSocketRotation":
                     from mathutils import Euler
                     target.default_value = Euler(value, 'XYZ')
                 else:
@@ -167,11 +203,20 @@ class NodeTreeBuilder:
         return self._with_location(self._socket(sockets.Mesh, bl_node, "Mesh"), location)
     
     def mesh_cylinder(self, radius: float = 1.0, depth: float = 2.0,
+                       vertices: int = 32,
                        location: Tuple[float, float, float] = (0, 0, 0)) -> sockets.Mesh:
-        """Create a cylinder mesh primitive."""
+        """Create a cylinder mesh primitive.
+        
+        Args:
+            radius: Radius of the cylinder
+            depth: Height/depth of the cylinder
+            vertices: Number of vertices (6 = hexagonal prism for crystal shapes)
+            location: Optional location offset
+        """
         bl_node = self._create_node("GeometryNodeMeshCylinder")
         bl_node.inputs["Radius"].default_value = radius
         bl_node.inputs["Depth"].default_value = depth
+        bl_node.inputs["Vertices"].default_value = vertices
         return self._with_location(self._socket(sockets.Mesh, bl_node, "Mesh"), location)
     
     def mesh_cone(self, radius1: float = 1.0, radius2: float = 0.0, depth: float = 2.0,
@@ -432,6 +477,62 @@ class NodeTreeBuilder:
         if "Seed" in bl_node.inputs:
             bl_node.inputs["Seed"].default_value = seed
         return sockets.Vector(self, self._output(bl_node, "Vector", "Value"), bl_node)
+
+    def random_float(self, min_val: float = 0.0, max_val: float = 1.0) -> sockets.Float:
+        """Create a random float field."""
+        bl_node = self._create_node("FunctionNodeRandomValue")
+        if hasattr(bl_node, "data_type"):
+            try:
+                bl_node.data_type = 'FLOAT'
+            except TypeError:
+                pass
+        self._set_or_link(bl_node.inputs["Min"], min_val)
+        self._set_or_link(bl_node.inputs["Max"], max_val)
+        return self._socket(sockets.Float, bl_node, "Value")
+
+    def capture_attribute(
+        self,
+        geometry: sockets.Geometry,
+        attribute_name: str = "normal",
+        data_type: str = "FLOAT3",
+    ) -> sockets.Vector:
+        """Capture an attribute (e.g. normal) at each point for later use."""
+        bl_node = self._create_node("GeometryNodeCaptureAttribute")
+        if hasattr(bl_node, "data_type"):
+            bl_node.data_type = data_type
+        self._set_or_link(bl_node.inputs["Geometry"], geometry)
+        if attribute_name and "Attribute" in bl_node.inputs:
+            bl_node.inputs["Attribute"].default_value = attribute_name
+        # Capture Float3 (vector) attribute → Vector output
+        return self._socket(sockets.Vector, bl_node, "Attribute")
+
+    def align_euler_to_vector(
+        self,
+        rotation: sockets.Vector,
+        factor: float | sockets.Float = 1.0,
+        vector: sockets.Vector | tuple = (0, 0, 1),
+        axis: str = "Z",
+    ) -> sockets.Vector:
+        """Align Euler rotation to point along a vector (e.g. surface normal)."""
+        bl_node = self._create_node("FunctionNodeAlignEulerToVector")
+        bl_node.inputs["Axis"].default_value = axis
+        self._set_or_link(bl_node.inputs["Rotation"], rotation)
+        self._set_or_link(bl_node.inputs["Factor"], factor)
+        self._set_or_link(bl_node.inputs["Object"], vector)
+        return self._socket(sockets.Vector, bl_node, "Rotation")
+
+    def rotate_euler(
+        self,
+        rotation: sockets.Vector,
+        rotate_by: sockets.Vector | tuple,
+        axis: str = "Z",
+    ) -> sockets.Vector:
+        """Apply additional Euler rotation around specified axis."""
+        bl_node = self._create_node("FunctionNodeRotateEuler")
+        bl_node.inputs["Axis"].default_value = axis
+        self._set_or_link(bl_node.inputs["Rotation"], rotation)
+        self._set_or_link(bl_node.inputs["RotateBy"], rotate_by)
+        return self._socket(sockets.Vector, bl_node, "Rotation")
 
     def set_position(
         self,

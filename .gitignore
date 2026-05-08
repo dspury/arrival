@@ -1,0 +1,25 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.png
+
+# macOS
+.DS_Store
+
+# Testing
+.pytest_cache/
+.coverage
+
+# Type checking
+.mypy_cache/
+.ruff_cache/
+
+# Claude
+.claude/
+
+# Distribution / packaging
+*.egg-info/
+dist/
+build/

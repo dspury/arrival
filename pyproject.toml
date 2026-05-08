@@ -1,0 +1,39 @@
+[project]
+name = "arrival"
+version = "0.2.0"
+description = "Agent-native 3D geometry library via Blender geometry nodes"
+requires-python = ">=3.10"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+    "bpy>=5.1,<5.2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+]
+
+[project.readme]
+relative-to = "."
+filename = "README.md"
+
+[build-system]
+requires = ["setuptools.build_meta"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["arrival*"]
+exclude = ["tests*", "test_*.py"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"

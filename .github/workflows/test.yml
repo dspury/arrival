@@ -1,0 +1,54 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Cache Blender
+        id: cache-blender
+        uses: actions/cache@v4
+        with:
+          path: ~/blender_cache
+          key: blender-5.1.1-linux-x64-${{ hashFiles('.github/workflows/test.yml') }}
+          restore-keys: |
+            blender-5.1.1-linux-x64-
+
+      - name: Install Blender
+        run: |
+          if [ -d ~/blender_cache ]; then
+            echo "Using cached Blender"
+          else
+            mkdir -p ~/blender_cache
+            cd ~/blender_cache
+            curl -L -o blender.tar.xz "https://download.blender.org/release/Blender5.1/blender-5.1.1-linux-x64.tar.xz"
+            tar -xf blender.tar.xz
+            rm blender.tar.xz
+          fi
+          echo "BLENDER_DIR=$(find ~/blender_cache -name 'blender-5.1.*' -type d | head -1)" >> $GITHUB_ENV
+
+      - name: Set up Python
+        run: |
+          ${BLENDER_DIR}/blender --background --python-expr "import sys; print(sys.executable)" | tee /tmp/blender_python.txt
+          BLENDER_PY=$(cat /tmp/blender_python.txt)
+          echo "BLENDER_PYTHON=$BLENDER_PY" >> $GITHUB_ENV
+
+      - name: Install dependencies
+        run: |
+          $BLENDER_PY -m pip install pytest pytest-blender --quiet
+
+      - name: Run tests
+        run: |
+          $BLENDER_PY -m pytest tests/ -v
