@@ -25,7 +25,7 @@ def crystal_cluster(
     displacement_strength: float = 0.08,
     displacement_scale: float = 3.0,
     material=None,
-) -> tuple[NodeTreeBuilder, sockets.Geometry]:
+) -> sockets.Geometry:
     """Create a crystal cluster: ico sphere base with pointed crystal instances.
 
     Crystals are hexagonal prisms with pointed tips, oriented to surface normals
@@ -115,7 +115,7 @@ def crystal_cluster(
     if material is not None:
         realized = realized.set_material(material)
 
-    return tree, realized
+    return realized
 
 
 def rocky_cluster(
@@ -126,7 +126,7 @@ def rocky_cluster(
     displacement_strength: float = 0.15,
     displacement_scale: float = 2.5,
     material=None,
-) -> tuple[NodeTreeBuilder, sockets.Geometry]:
+) -> sockets.Geometry:
     """Create a rocky cluster: displaced ico sphere with no crystal instances.
     
     Good for asteroids, ore deposits, or organic rock formations.
@@ -141,7 +141,7 @@ def rocky_cluster(
         material: Optional material
     
     Returns:
-        Tuple of (NodeTreeBuilder, Geometry socket)
+        Geometry socket
     """
     tree = NodeTreeBuilder("RockyCluster")
     tree.__enter__()
@@ -154,4 +154,4 @@ def rocky_cluster(
     if material is not None:
         realized = realized.set_material(material)
     
-    return tree, realized
+    return realized

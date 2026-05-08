@@ -305,19 +305,21 @@ This section audits every public symbol in `arrival/__init__.py` and `arrival/no
 | `Boolean` | Class | ✅ PASS | Wrapped type |
 | `Material` | Class | ✅ PASS | Static factory methods return raw `bpy.types.Material` — but material system is Blender's domain and is explicitly allowed to return Blender types |
 | `Scene` | Class | ✅ PASS | High-level builder, all parameters use intent-not-mechanism approach |
-| `blender` | Module | ❌ **FAIL** | Raw `bpy` import exposed as public module. An LLM could access `blender.data` or `blender.ops` and leave the agent-native world. This should be `arrival._blender` or removed from `__all__`. |
-| `new_tree` | Function | ❌ **FAIL** | Returns `NodeTreeBuilder` — a low-level builder that exposes `_create_node`, `_link`, `_set_or_link`, `_socket`, `tree` property returning raw `bpy.types.GeometryNodeTree`. Should never have been public; agents should use `Scene` or shape helpers. |
-| `crystal_cluster` | Function | ❌ **FAIL** | Returns `tuple[NodeTreeBuilder, Geometry]` — agent must know to unpack a tuple and the `NodeTreeBuilder` is a raw internal type. Additionally, `NodeTreeBuilder` (line 719) calls `__enter__()` directly rather than using a context manager, which is a gotcha. |
-| `rocky_cluster` | Function | ❌ **FAIL** | Same issue as `crystal_cluster`: returns `tuple[NodeTreeBuilder, Geometry]`. |
+| `describe` | Function | ✅ PASS | Accepts Scene or path, returns description string |
+| `show` | Function | ✅ PASS | One-call render with smart defaults |
+| `blender` | Module | ✅ PASS | Removed from `__all__` — no longer publicly exported. Internal blender utilities remain available internally. |
+| `export_usd` | Function | ✅ PASS | Top-level USD export. Accepts Geometry/Mesh socket, exports to USD. Path ends in .usda/.usdc/.usdz. |
 
 ### Symbols Exported from `arrival/nodes.py`
 
-| Symbol | Type | Agent-Native? | Notes |
+Note: `arrival/nodes.py` is internal and not publicly exported via `arrival/__init__.py`. The public API entry point is `Scene` or direct imports from `arrival` itself. However, for completeness:
+
+|| Symbol | Type | Agent-Native? | Notes |
 |--------|------|---------------|-------|
-| `NodeTreeBuilder` | Class | ❌ **FAIL — LOW-LEVEL** | Builder class that is the correct internal implementation but should not be in `__all__`. Exposes: `tree` property → `bpy.types.GeometryNodeTree`; `_create_node`, `_link`, `_set_or_link`, `_socket`, `_set_enum`, `_auto_output` — all internals. |
-| `new_tree` | Function | ❌ **FAIL** | Same as above — returns `NodeTreeBuilder` |
-| `crystal_cluster` | Function | ❌ **FAIL** | Same as above |
-| `rocky_cluster` | Function | ❌ **FAIL** | Same as above |
+| `NodeTreeBuilder` | Class | ⚠️ INTERNAL | Internal implementation class. Not in `__all__` of `arrival/__init__.py`. Use `Scene` for public API. |
+| `new_tree` | Function | ⚠️ INTERNAL | Internal factory. Not in `__all__`. Use `Scene` instead. |
+| `crystal_cluster` | Function | ✅ PASS (moved) | Functionality moved to `examples/recipes/`. Scene.crystal_cluster() is the public API. |
+| `rocky_cluster` | Function | ✅ PASS (moved) | Functionality moved to `examples/recipes/`. Scene.rocky_cluster() is the public API. |
 
 ### Socket Method Audit (`sockets.py` — public via `Geometry`, `Mesh`, etc.)
 
@@ -330,9 +332,10 @@ This section audits every public symbol in `arrival/__init__.py` and `arrival/no
 | `Geometry.set_position` | ✅ PASS | |
 | `Geometry.delete` | ⚠️ **FAIL** | `domain="FACE"`, `mode="ALL"` — raw Blender enum strings (`"FACE"`, `"EDGE"`, `"VERTICES"`, `"EDGES"`, `"FACES"`, `"CORNERS"`). An LLM would need Blender domain knowledge to know these values. Should use lowercase string constants: `domain="face"`, `mode="all"`. |
 | `Geometry.to_points` | ⚠️ **FAIL** | `mode="VERTICES"` — same issue as above (`"VERTICES"`, `"EDGES"`, `"FACES"`, `"CORNERS"`) |
-| `Socket.bl_socket` | ❌ **FAIL** | Returns `bpy.types.NodeSocket` — raw Blender type. Property name `bl_socket` itself signals "this is a Blender thing". Should be private. |
-| `Socket.bl_node` | ❌ **FAIL** | Returns `bpy.types.Node` — raw Blender type. Should be private. |
-| `Socket.node` | ❌ **FAIL** | Returns `NodeTreeBuilder` — low-level builder. An agent could call `.node.mesh_cube()` directly, bypassing the agent-native API. |
+| `Geometry.to_usd` | ✅ PASS | Export geometry to USD. Accepts output_path, returns path string. |
+| `Socket._bl_socket` | ❌ FAIL (now private) | Returns `bpy.types.NodeSocket` — raw Blender type. Property renamed to `_bl_socket` to mark as internal. |
+| `Socket._bl_node` | ❌ FAIL (now private) | Returns `bpy.types.Node` — raw Blender type. Property renamed to `_bl_node` to mark as internal. |
+| `Socket._node` | ❌ FAIL (now private) | Returns `NodeTreeBuilder` — low-level builder. Property renamed to `_node` to mark as internal. |
 
 ### NodeTreeBuilder Method Audit (`nodes.py`)
 
@@ -352,22 +355,23 @@ This section audits every public symbol in `arrival/__init__.py` and `arrival/no
 | `align_euler_to_vector` | ⚠️ **FAIL** | `axis="Z"` — Blender-specific concept; `rotation` param is a `Vector` socket type |
 | `rotate_euler` | ⚠️ **FAIL** | Same |
 | `set_position` | ✅ PASS | Accepts socket types or tuples, flexible |
-| `apply_to_object` | ❌ **FAIL** | `obj: bpy.types.Object` — raw Blender type |
-| `capture_attribute` | ⚠️ **FAIL** | `data_type: str = "FLOAT3"` — raw Blender enum string |
+| `export_usd` | ✅ PASS | Accepts Geometry socket, exports to USD file. Auto-appends .usda if extension missing. |
+| `apply_to_object` | ❌ FAIL | `obj: bpy.types.Object` — raw Blender type |
+| `capture_attribute` | ⚠️ FAIL | `data_type: str = "FLOAT3"` — raw Blender enum string |
 | `set_output`, `get_input` | ⚠️ **FAIL** | `get_input` returns a socket that wraps `GroupInput.outputs["Geometry"]` — works but the method name and purpose require understanding Blender node group concepts |
 | `_create_node`, `_link`, `_set_or_link`, `_socket`, `_set_enum`, `_auto_output`, `_input`, `_output`, `_with_location`, `_next_y` | ❌ **FAIL — INTERNAL** | All prefixed with `_` indicating they are internal. Confirmed: these are implementation details. The `tree` property returning `bpy.types.GeometryNodeTree` is also internal. |
 
 ### Summary of Failures
 
-**Critical (must fix before shipping):**
-1. `blender` module in `__all__` — remove or rename to private
-2. `new_tree` in `__all__` — remove; `Scene` is the public entry point
-3. `crystal_cluster`, `rocky_cluster` returning `tuple[NodeTreeBuilder, Geometry]` — change return to just `Geometry` or create a `ClusterResult` wrapper
-4. `Socket.bl_socket`, `Socket.bl_node`, `Socket.node` — make private (`_bl_socket`, `_bl_node`, `_node`)
+**Critical (FIXED in v0.2):**
+1. ✅ `blender` module in `__all__` — removed from public exports
+2. ✅ `new_tree` in `__all__` — never was in `__all__`; the nodes.py module is internal-only
+3. ✅ `crystal_cluster`, `rocky_cluster` returning `tuple[NodeTreeBuilder, Geometry]` — changed to return `Geometry` only; `Scene.crystal_cluster()` and `Scene.rocky_cluster()` use `examples.recipes` implementations
+4. ✅ `Socket.bl_socket`, `Socket.bl_node`, `Socket.node` — renamed to `_bl_socket`, `_bl_node`, `_node` (private)
 
 **Minor (should fix for polish):**
 5. `delete`, `to_points` `domain`/`mode` params use raw Blender enums — normalize to lowercase strings
-6. `NodeTreeBuilder` should not be in `__all__` of `nodes.py`
+6. `NodeTreeBuilder` should not be in `__all__` of `nodes.py` — confirmed: not in `__all__` of any public module
 7. `store_named_attribute`, `capture_attribute` `data_type` param — normalize enum strings
 
 ---

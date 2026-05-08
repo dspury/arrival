@@ -661,6 +661,79 @@ class NodeTreeBuilder:
         mod.node_group = self._tree
         return mod
 
+    # ─────────────────────────────────────────────────────────────────
+    # USD Export
+    # ─────────────────────────────────────────────────────────────────
+    
+    def _realize_geometry(self, geometry: sockets.Geometry) -> bpy.types.Object:
+        """Realize geometry into a mesh object for export."""
+        import bpy
+        
+        # Create a temporary cube to hold the modifier
+        bpy.ops.mesh.primitive_cube_add(location=(0, 0, 0))
+        obj = bpy.context.active_object
+        obj.name = "ArrivalUSDExport"
+        
+        # Apply the node tree
+        mod = obj.modifiers.new(name="GeometryNodes", type='NODES')
+        mod.node_group = self._tree
+        
+        # Update view layer to ensure geometry is computed
+        # This is critical - without it, USD export sees empty geometry
+        bpy.context.view_layer.update()
+        
+        return obj
+
+    def export_usd(self, geometry: sockets.Geometry, output_path: str) -> str:
+        """Export geometry to USD format.
+        
+        Args:
+            geometry: Geometry socket to export
+            output_path: Path to save the USD file (.usda or .usdc)
+        
+        Returns:
+            Path to the exported USD file
+        
+        Raises:
+            RuntimeError: If USD export fails
+        
+        Example:
+            >>> tree = NodeTreeBuilder("MyExport")
+            >>> with tree:
+            ...     cube = tree.mesh_cube()
+            ...     tree.export_usd(cube, "/tmp/my_scene.usda")
+        """
+        import os
+        import bpy
+        
+        # Ensure output path has USD extension
+        ext = os.path.splitext(output_path)[1].lower()
+        if ext not in ('.usda', '.usdc', '.usdz'):
+            output_path = output_path + '.usda'
+        
+        # Realize the geometry to a mesh object
+        obj = self._realize_geometry(geometry)
+        
+        try:
+            # Select the object for export
+            bpy.ops.object.select_all(action='DESELECT')
+            obj.select_set(True)
+            bpy.context.view_layer.objects.active = obj
+            
+            # Export to USD - minimal params only (Blender 5.x doesn't support export_selected)
+            bpy.ops.wm.usd_export(filepath=output_path)
+            
+            if not os.path.exists(output_path):
+                raise RuntimeError(f"USD export succeeded but file not found at: {output_path}")
+            
+            return output_path
+            
+        except Exception as exc:
+            raise RuntimeError(
+                f"USD export failed: {exc}. "
+                "Make sure you have an active object and the geometry tree is valid."
+            ) from exc
+
 
 def new_tree(name: str = "ArrivalNodes") -> NodeTreeBuilder:
     """Create a new geometry node tree builder."""

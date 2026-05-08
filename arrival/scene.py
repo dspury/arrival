@@ -363,8 +363,8 @@ class Scene:
                 scene.lighting("crystal")
                 scene.render("/tmp/crystals.png")
         """
-        from .nodes import crystal_cluster as _crystal_cluster
-        tree, realized = _crystal_cluster(
+        from examples.recipes import crystal_cluster
+        realized = crystal_cluster(
             radius=radius,
             subdivisions=subdivisions,
             density=density,
@@ -381,7 +381,6 @@ class Scene:
         if location != (0, 0, 0):
             realized = realized.transform(translation=location)
         
-        self._tree_builder = tree
         return self.mesh(realized, material=None, name=name or "CrystalCluster")
     
     def rocky_cluster(
@@ -414,8 +413,8 @@ class Scene:
         Returns:
             Geometry socket
         """
-        from .nodes import rocky_cluster as _rocky_cluster
-        tree, realized = _rocky_cluster(
+        from examples.recipes import rocky_cluster
+        realized = rocky_cluster(
             radius=radius,
             subdivisions=subdivisions,
             density=density,
@@ -428,7 +427,6 @@ class Scene:
         if location != (0, 0, 0):
             realized = realized.transform(translation=location)
         
-        self._tree_builder = tree
         return self.mesh(realized, material=None, name=name or "RockyCluster")
     
     def camera(self, preset: str = None,

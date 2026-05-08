@@ -33,18 +33,18 @@ class Socket:
         return f"<{self.__class__.__name__} socket={self._socket!r} node={self._bl_node!r}>"
     
     @property
-    def node(self) -> 'NodeTreeBuilder':
-        """The node tree builder this socket belongs to."""
+    def _node(self) -> 'NodeTreeBuilder':
+        """The node tree builder this socket belongs to (internal)."""
         return self._node
     
     @property
-    def bl_socket(self) -> bpy.types.NodeSocket:
-        """The underlying Blender socket."""
+    def _bl_socket(self) -> bpy.types.NodeSocket:
+        """The underlying Blender socket (internal)."""
         return self._socket
     
     @property
-    def bl_node(self) -> bpy.types.Node:
-        """The underlying Blender node."""
+    def _bl_node(self) -> bpy.types.Node:
+        """The underlying Blender node (internal)."""
         return self._bl_node
     
     @property
@@ -136,6 +136,26 @@ class Geometry(Socket):
     def to_points(self, mode="VERTICES", radius=0.05) -> 'Geometry':
         """Convert this mesh geometry to points."""
         return self._node.mesh_to_points(self, mode=mode, radius=radius)
+
+    def to_usd(self, output_path: str) -> str:
+        """Export this geometry to USD format.
+        
+        Args:
+            output_path: Path to save the USD file (.usda, .usdc, or .usdz)
+        
+        Returns:
+            Path to the exported USD file
+        
+        Raises:
+            RuntimeError: If USD export fails
+        
+        Example:
+            >>> with NodeTreeBuilder("ExportTest") as tree:
+            ...     cube = tree.mesh_cube(size=2.0)
+            ...     path = cube.to_usd("/tmp/my_cube.usda")
+            >>> print(f"Exported to: {path}")
+        """
+        return self._node.export_usd(self, output_path)
 
 
 class Mesh(Geometry):
